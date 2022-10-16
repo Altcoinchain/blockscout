@@ -27,6 +27,10 @@ defmodule BlockScoutWeb.API.V2.TransactionView do
     prepare_transaction(transaction, conn)
   end
 
+  def render("transaction.json", %{transaction: transaction, socket: socket}) do
+    prepare_transaction(transaction, socket)
+  end
+
   def render("raw_trace.json", %{internal_transactions: internal_transactions}) do
     InternalTransaction.internal_transactions_to_raw(internal_transactions)
   end
@@ -55,25 +59,34 @@ defmodule BlockScoutWeb.API.V2.TransactionView do
     prepare_token_transfer(token_transfer, conn)
   end
 
+  def render("token_transfer.json", %{token_transfer: token_transfer, socket: socket}) do
+    prepare_token_transfer(token_transfer, socket)
+  end
+
   def render("internal_transactions.json", %{
         internal_transactions: internal_transactions,
-        next_page_params: next_page_params
+        next_page_params: next_page_params,
+        conn: conn
       }) do
     %{
-      "items" => Enum.map(internal_transactions, &prepare_internal_transaction/1),
+      "items" => Enum.map(internal_transactions, &prepare_internal_transaction(&1, conn)),
       "next_page_params" => next_page_params
     }
+  end
+
+  def render("internal_transaction.json", %{internal_transaction: internal_transaction, socket: socket}) do
+    prepare_internal_transaction(internal_transaction, socket)
   end
 
   def render("logs.json", %{logs: logs, next_page_params: next_page_params, tx_hash: tx_hash}) do
     %{"items" => Enum.map(logs, fn log -> prepare_log(log, tx_hash) end), "next_page_params" => next_page_params}
   end
 
-  def prepare_token_transfer(token_transfer, conn) do
+  def prepare_token_transfer(token_transfer, conn_or_socket) do
     %{
       "tx_hash" => token_transfer.transaction_hash,
-      "from" => Helper.address_with_info(conn, token_transfer.from_address, token_transfer.from_address_hash),
-      "to" => Helper.address_with_info(conn, token_transfer.to_address, token_transfer.to_address_hash),
+      "from" => Helper.address_with_info(conn_or_socket, token_transfer.from_address, token_transfer.from_address_hash),
+      "to" => Helper.address_with_info(conn_or_socket, token_transfer.to_address, token_transfer.to_address_hash),
       "total" => prepare_token_transfer_total(token_transfer),
       "token" => TokenView.render("token.json", %{token: Market.add_price(token_transfer.token)}),
       "type" => Chain.get_token_transfer_type(token_transfer)
@@ -101,16 +114,23 @@ defmodule BlockScoutWeb.API.V2.TransactionView do
     end
   end
 
-  def prepare_internal_transaction(internal_transaction) do
+  def prepare_internal_transaction(internal_transaction, conn_or_socket) do
     %{
       "error" => internal_transaction.error,
       "success" => is_nil(internal_transaction.error),
       "type" => internal_transaction.call_type,
       "transaction_hash" => internal_transaction.transaction_hash,
-      "from" => Helper.address_with_info(internal_transaction.from_address, internal_transaction.from_address_hash),
-      "to" => Helper.address_with_info(internal_transaction.to_address, internal_transaction.to_address_hash),
+      "from" =>
+        Helper.address_with_info(
+          conn_or_socket,
+          internal_transaction.from_address,
+          internal_transaction.from_address_hash
+        ),
+      "to" =>
+        Helper.address_with_info(conn_or_socket, internal_transaction.to_address, internal_transaction.to_address_hash),
       "created_contract" =>
         Helper.address_with_info(
+          conn_or_socket,
           internal_transaction.created_contract_address,
           internal_transaction.created_contract_address_hash
         ),
@@ -155,7 +175,7 @@ defmodule BlockScoutWeb.API.V2.TransactionView do
     }
   end
 
-  defp prepare_transaction(%Transaction{} = transaction, conn) do
+  defp prepare_transaction(%Transaction{} = transaction, conn_or_socket) do
     base_fee_per_gas = transaction.block && transaction.block.base_fee_per_gas
     max_priority_fee_per_gas = transaction.max_priority_fee_per_gas
     max_fee_per_gas = transaction.max_fee_per_gas
@@ -177,10 +197,14 @@ defmodule BlockScoutWeb.API.V2.TransactionView do
       "status" => transaction.status,
       "block" => transaction.block_number,
       "timestamp" => transaction.block && transaction.block.timestamp,
-      "from" => Helper.address_with_info(conn, transaction.from_address, transaction.from_address_hash),
-      "to" => Helper.address_with_info(conn, transaction.to_address, transaction.to_address_hash),
+      "from" => Helper.address_with_info(conn_or_socket, transaction.from_address, transaction.from_address_hash),
+      "to" => Helper.address_with_info(conn_or_socket, transaction.to_address, transaction.to_address_hash),
       "created_contract" =>
-        Helper.address_with_info(conn, transaction.created_contract_address, transaction.created_contract_address_hash),
+        Helper.address_with_info(
+          conn_or_socket,
+          transaction.created_contract_address,
+          transaction.created_contract_address_hash
+        ),
       "confirmations" =>
         transaction.block |> Chain.confirmations(block_height: Chain.block_height()) |> format_confirmations(),
       "confirmation_duration" => processing_time_duration(transaction),
@@ -200,12 +224,12 @@ defmodule BlockScoutWeb.API.V2.TransactionView do
       "revert_reason" => revert_reason,
       "raw_input" => transaction.input,
       "decoded_input" => decoded_input_data,
-      "token_transfers" => token_transfers(transaction.token_transfers, conn),
+      "token_transfers" => token_transfers(transaction.token_transfers, conn_or_socket),
       "token_transfers_overflow" => token_transfers_overflow(transaction.token_transfers),
       "exchange_rate" => (Market.get_exchange_rate(Explorer.coin()) || TokenRate.null()).usd_value,
       "method" => method_name(transaction, decoded_input),
       "tx_types" => tx_types(transaction),
-      "tx_tag" => GetTransactionTags.get_transaction_tags(transaction.hash, current_user(conn))
+      "tx_tag" => GetTransactionTags.get_transaction_tags(transaction.hash, current_user(conn_or_socket))
     }
   end
 

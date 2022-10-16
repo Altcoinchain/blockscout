@@ -18,7 +18,12 @@ defmodule BlockScoutWeb.API.V2.BlockView do
     prepare_block(block, conn, true)
   end
 
-  def prepare_block(block, conn, single_block? \\ false) do
+  def render("block.json", %{block: block, socket: socket}) do
+    # single_block? set to true in order to prevent heavy fetching of reward type
+    prepare_block(block, socket, false)
+  end
+
+  def prepare_block(block, conn_or_socket, single_block? \\ false) do
     burned_fee = block.base_fee_per_gas && Wei.mult(block.base_fee_per_gas, BlockBurnedFeeCounter.fetch(block.hash))
     priority_fee = block.base_fee_per_gas && BlockPriorityFeeCounter.fetch(block.hash)
 
@@ -33,7 +38,7 @@ defmodule BlockScoutWeb.API.V2.BlockView do
       "height" => block.number,
       "timestamp" => block.timestamp,
       "tx_count" => count_transactions(block),
-      "miner" => Helper.address_with_info(conn, block.miner, block.miner_hash),
+      "miner" => Helper.address_with_info(conn_or_socket, block.miner, block.miner_hash),
       "size" => block.size,
       "hash" => block.hash,
       "parent_hash" => block.parent_hash,

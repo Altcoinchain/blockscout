@@ -4,6 +4,7 @@ defmodule BlockScoutWeb.TransactionChannel do
   """
   use BlockScoutWeb, :channel
 
+  alias BlockScoutWeb.API.V2.TransactionView, as: TransactionViewAPI
   alias BlockScoutWeb.TransactionView
   alias Explorer.Chain
   alias Explorer.Chain.Hash
@@ -30,6 +31,18 @@ defmodule BlockScoutWeb.TransactionChannel do
     {:ok, %{}, socket}
   end
 
+  def handle_out(
+        "pending_transaction",
+        %{transaction: transaction},
+        %Phoenix.Socket{handler: BlockScoutWeb.UserSocketV2} = socket
+      ) do
+    rendered_transaction = TransactionViewAPI.render("transaction.json", %{transaction: transaction, socket: socket})
+
+    push(socket, "pending_transaction", %{transaction: rendered_transaction})
+
+    {:noreply, socket}
+  end
+
   def handle_out("pending_transaction", %{transaction: transaction}, socket) do
     Gettext.put_locale(BlockScoutWeb.Gettext, socket.assigns.locale)
 
@@ -46,6 +59,18 @@ defmodule BlockScoutWeb.TransactionChannel do
       transaction_hash: Hash.to_string(transaction.hash),
       transaction_html: rendered_transaction
     })
+
+    {:noreply, socket}
+  end
+
+  def handle_out(
+        "transaction",
+        %{transaction: transaction},
+        %Phoenix.Socket{handler: BlockScoutWeb.UserSocketV2} = socket
+      ) do
+    rendered_transaction = TransactionViewAPI.render("transaction.json", %{transaction: transaction, socket: socket})
+
+    push(socket, "transaction", %{transaction: rendered_transaction})
 
     {:noreply, socket}
   end

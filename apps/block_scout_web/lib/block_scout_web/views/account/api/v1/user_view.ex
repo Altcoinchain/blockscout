@@ -6,6 +6,10 @@ defmodule BlockScoutWeb.Account.Api.V1.UserView do
     AccountView.render("message.json", assigns)
   end
 
+  def render("token.json", %{token: token}) do
+    %{"token" => token}
+  end
+
   def render("user_info.json", %{identity: identity}) do
     %{"name" => identity.name, "email" => identity.email, "avatar" => identity.avatar, "nickname" => identity.nickname}
   end

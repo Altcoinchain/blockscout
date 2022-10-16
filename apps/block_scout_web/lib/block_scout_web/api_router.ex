@@ -37,6 +37,7 @@ defmodule BlockScoutWeb.ApiRouter do
     pipe_through(:account_api)
 
     get("/get_csrf", UserController, :get_csrf)
+    get("/get_auth_token", UserController, :get_auth_token)
 
     scope "/user" do
       get("/info", UserController, :info)

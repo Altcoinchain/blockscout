@@ -10,6 +10,7 @@ defmodule BlockScoutWeb.Account.Api.V1.UserController do
   alias Explorer.Account.{Identity, PublicTagsRequest, TagAddress, TagTransaction, WatchlistAddress}
   alias Explorer.ExchangeRates.Token
   alias Explorer.{Market, Repo}
+  alias Phoenix.Token, as: BearerToken
   alias Plug.CSRFProtection
 
   action_fallback(BlockScoutWeb.Account.Api.V1.FallbackController)
@@ -461,6 +462,19 @@ defmodule BlockScoutWeb.Account.Api.V1.UserController do
       |> put_resp_header("x-bs-account-csrf", CSRFProtection.get_csrf_token())
       |> put_status(200)
       |> render(:message, %{message: "ok"})
+    end
+  end
+
+  def get_auth_token(conn, _) do
+    with {:auth, %{id: uid}} <- {:auth, current_user(conn)},
+         {:identity, [%Identity{} = identity]} <- {:identity, UserFromAuth.find_identity(uid)},
+         {:watchlist, %{watchlists: [watchlist | _]}} <-
+           {:watchlist, Repo.account_repo().preload(identity, :watchlists)} do
+      id_map = %{id: uid, watchlist_id: watchlist.id}
+
+      conn
+      |> put_status(200)
+      |> render(:token, %{token: BearerToken.sign(conn, "user_auth", id_map)})
     end
   end
 

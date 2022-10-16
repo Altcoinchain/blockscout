@@ -4,6 +4,8 @@ defmodule BlockScoutWeb.AddressChannel do
   """
   use BlockScoutWeb, :channel
 
+  alias BlockScoutWeb.API.V2.TransactionView, as: TransactionViewAPI
+
   alias BlockScoutWeb.{
     AddressCoinBalanceView,
     AddressView,
@@ -59,6 +61,20 @@ defmodule BlockScoutWeb.AddressChannel do
   def handle_out(
         "balance_update",
         %{address: address, exchange_rate: exchange_rate},
+        %Phoenix.Socket{handler: BlockScoutWeb.UserSocketV2} = socket
+      ) do
+    push(socket, "balance", %{
+      balance: address.fetched_coin_balance.value,
+      fetched_coin_balance_block_number: address.fetched_coin_balance_block_number,
+      exchange_rate: to_string(exchange_rate)
+    })
+
+    {:noreply, socket}
+  end
+
+  def handle_out(
+        "balance_update",
+        %{address: address, exchange_rate: exchange_rate},
         socket
       ) do
     case render_balance_card(address, exchange_rate, socket) do
@@ -88,10 +104,32 @@ defmodule BlockScoutWeb.AddressChannel do
     end
   end
 
+  def handle_out("count", %{count: count}, %Phoenix.Socket{handler: BlockScoutWeb.UserSocketV2} = socket) do
+    push(socket, "count", %{count: to_string(count)})
+
+    {:noreply, socket}
+  end
+
   def handle_out("count", %{count: count}, socket) do
     Gettext.put_locale(BlockScoutWeb.Gettext, socket.assigns.locale)
 
     push(socket, "count", %{count: BlockScoutWeb.Cldr.Number.to_string!(count, format: "#,###")})
+
+    {:noreply, socket}
+  end
+
+  def handle_out(
+        "internal_transaction",
+        %{address: _address, internal_transaction: internal_transaction},
+        %Phoenix.Socket{handler: BlockScoutWeb.UserSocketV2} = socket
+      ) do
+    rendered_internal_transaction =
+      TransactionViewAPI.render("internal_transaction.json", %{
+        internal_transaction: internal_transaction,
+        socket: socket
+      })
+
+    push(socket, "internal_transaction", %{internal_transaction: rendered_internal_transaction})
 
     {:noreply, socket}
   end
@@ -120,6 +158,20 @@ defmodule BlockScoutWeb.AddressChannel do
 
   def handle_out("token_transfer", data, socket), do: handle_token_transfer(data, socket, "token_transfer")
 
+  def handle_out(
+        "coin_balance",
+        %{block_number: block_number},
+        %Phoenix.Socket{handler: BlockScoutWeb.UserSocketV2} = socket
+      ) do
+    coin_balance = Chain.get_coin_balance(socket.assigns.address_hash, block_number)
+
+    # TODO: coin balance history chart
+
+    push_current_coin_balance(socket, block_number, coin_balance)
+
+    {:noreply, socket}
+  end
+
   def handle_out("coin_balance", %{block_number: block_number}, socket) do
     coin_balance = Chain.get_coin_balance(socket.assigns.address_hash, block_number)
 
@@ -143,6 +195,18 @@ defmodule BlockScoutWeb.AddressChannel do
   end
 
   def handle_out("pending_transaction", data, socket), do: handle_transaction(data, socket, "transaction")
+
+  def push_current_coin_balance(
+        %Phoenix.Socket{handler: BlockScoutWeb.UserSocketV2} = socket,
+        block_number,
+        coin_balance
+      ) do
+    push(socket, "current_coin_balance", %{
+      coin_balance: (coin_balance && coin_balance.value) || %Wei{value: Decimal.new(0)},
+      exchange_rate: Market.get_exchange_rate(Explorer.coin()) || Token.null(),
+      block_number: block_number
+    })
+  end
 
   def push_current_coin_balance(socket, block_number, coin_balance) do
     {:ok, hash} = Chain.string_to_address_hash(socket.assigns.address_hash)
@@ -172,6 +236,18 @@ defmodule BlockScoutWeb.AddressChannel do
     })
   end
 
+  def handle_transaction(
+        %{address: _address, transaction: transaction},
+        %Phoenix.Socket{handler: BlockScoutWeb.UserSocketV2} = socket,
+        event
+      ) do
+    rendered_transaction = TransactionViewAPI.render("transaction.json", %{transaction: transaction, socket: socket})
+
+    push(socket, event, %{transaction: rendered_transaction})
+
+    {:noreply, socket}
+  end
+
   def handle_transaction(%{address: address, transaction: transaction}, socket, event) do
     Gettext.put_locale(BlockScoutWeb.Gettext, socket.assigns.locale)
 
@@ -190,6 +266,31 @@ defmodule BlockScoutWeb.AddressChannel do
       from_address_hash: to_string(transaction.from_address_hash),
       transaction_hash: Hash.to_string(transaction.hash),
       transaction_html: rendered
+    })
+
+    {:noreply, socket}
+  end
+
+  def handle_token_transfer(
+        %{address: _address, token_transfer: token_transfer},
+        %Phoenix.Socket{handler: BlockScoutWeb.UserSocketV2} = socket,
+        event
+      ) do
+    transaction =
+      Transaction
+      |> Repo.get_by(hash: token_transfer.transaction_hash)
+      |> Repo.preload([
+        :from_address,
+        :to_address,
+        :block,
+        :created_contract_address,
+        token_transfers: [:from_address, :to_address, :token]
+      ])
+
+    rendered_transaction = TransactionViewAPI.render("transaction.json", %{transaction: transaction, socket: socket})
+
+    push(socket, event, %{
+      transaction: rendered_transaction
     })
 
     {:noreply, socket}

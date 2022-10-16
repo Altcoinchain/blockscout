@@ -57,6 +57,8 @@ defmodule BlockScoutWeb.Account.AuthController do
     current_user(conn) || redirect(conn, to: root())
   end
 
+  def current_user(%Phoenix.Socket{assigns: %{user: %{id: _, watchlist_id: _} = user}}), do: user
+
   def current_user(%{private: %{plug_session: %{"current_user" => _}}} = conn) do
     if Account.enabled?() do
       get_session(conn, :current_user)
