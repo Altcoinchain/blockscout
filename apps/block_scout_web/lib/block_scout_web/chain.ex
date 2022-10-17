@@ -24,6 +24,7 @@ defmodule BlockScoutWeb.Chain do
     Block,
     InternalTransaction,
     Log,
+    SmartContract,
     Token,
     TokenTransfer,
     Transaction,
@@ -216,6 +217,10 @@ defmodule BlockScoutWeb.Chain do
     [paging_options: %{@default_paging_options | key: {name, type, value}}]
   end
 
+  def paging_options(%{"inserted_at" => inserted_at}) do
+    [paging_options: %{@default_paging_options | key: {inserted_at}}]
+  end
+
   def paging_options(_params), do: [paging_options: @default_paging_options]
 
   def put_key_value_to_paging_options([paging_options: paging_options], key, value) do
@@ -347,6 +352,10 @@ defmodule BlockScoutWeb.Chain do
 
   defp paging_params(%CoinBalance{block_number: block_number}) do
     %{"block_number" => block_number}
+  end
+
+  defp paging_params(%SmartContract{inserted_at: inserted_at}) do
+    %{"inserted_at" => DateTime.to_iso8601(inserted_at)}
   end
 
   defp paging_params(%{
